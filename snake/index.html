@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>贪吃蛇游戏</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        #snakeCV {
+            display: block;
+            margin: 0 auto;
+            background-color: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="snakeCV" width="750"></canvas>
+    <script>
+        const canvas = document.getElementById('snakeCV');
+        const ctx = canvas.getContext('2d');
+        canvas.height = window.innerHeight;
+
+        const blockSize = 30;
+        const snakeHeadTexture = new Image();
+        snakeHeadTexture.src = 'images/snakehead.png';
+        const snakeHeadOneTexture = new Image();
+        snakeHeadOneTexture.src = 'images/snakeheadone.png';
+        const snakeBodyTexture = new Image();
+        snakeBodyTexture.src = 'images/snakebody.png';
+        const snakeFooterTexture = new Image();
+        snakeFooterTexture.src = 'images/snakefooter.png';
+        const rtNewTexture = new Image();
+        rtNewTexture.src = 'images/rt_new.png';
+        const trNewTexture = new Image();
+        trNewTexture.src = 'images/tr_new.png';
+        const ltNewTexture = new Image();
+        ltNewTexture.src = 'images/lt_new.png';
+        const tlNewTexture = new Image();
+        tlNewTexture.src = 'images/tl_new.png';
+        const foodTexture = new Image();
+        foodTexture.src = 'images/food.png';
+        let snake = [{
+            x: Math.floor(Math.random() * (canvas.width / blockSize)) * blockSize,
+            y: Math.floor(Math.random() * (canvas.height / blockSize)) * blockSize
+        }];
+        let direction = 'right';
+        let nextDirection = direction;
+        let foodScale = 0;
+        let foodOpacity = 0;
+        let foodShakeOffset = 0;
+        let food = generateFood();
+        let headOpacity = 1;
+
+        var intervalMoveSnake = null,
+            intervalOpacity = null;
+
+        function generateFood() {
+            let pos;
+            do {
+                pos = {
+                    x: Math.floor(Math.random() * (canvas.width / blockSize)) * blockSize,
+                    y: Math.floor(Math.random() * (canvas.height / blockSize)) * blockSize
+                };
+            } while (snake.some(segment => segment.x === pos.x && segment.y === pos.y) || pos.x >= canvas.width);
+            foodScale = 0;
+            foodOpacity = 0;
+            foodShakeOffset = 0;
+            animateFood();
+            return pos;
+        }
+
+        function animateFood() {
+            const interval = setInterval(() => {
+                foodScale += 0.05;
+                foodOpacity += 0.05;
+                foodShakeOffset = Math.sin(foodScale * 10) * 2; // 抖动效果
+                if (foodScale >= 1.2) {
+                    foodScale = 1.2;
+                }
+                if (foodOpacity >= 1) {
+                    foodOpacity = 1;
+                }
+                if (foodScale === 1.2 && foodOpacity === 1) {
+                    clearInterval(interval);
+                    const shrinkInterval = setInterval(() => {
+                        foodScale -= 0.05;
+                        if (foodScale <= 1) {
+                            foodScale = 1;
+                            clearInterval(shrinkInterval);
+                        }
+                    }, 50);
+                }
+            }, 50);
+        }
+
+        function drawBlock(x, y, texture, rotation, opacity = 1, scale = 1, shakeOffset = 0) {
+            ctx.save();
+            ctx.translate(x + blockSize / 2 + shakeOffset, y + blockSize / 2 + shakeOffset);
+            ctx.rotate(rotation);
+            ctx.globalAlpha = opacity;
+            ctx.drawImage(texture, -blockSize / 2 * scale, -blockSize / 2 * scale, blockSize * scale, blockSize * scale);
+            ctx.globalAlpha = 1;
+            ctx.restore();
+        }
+
+        function drawGrid() {
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.lineWidth = 1;
+
+            for (let x = 0; x <= canvas.width; x += blockSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+
+            for (let y = 0; y <= canvas.height; y += blockSize) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+        }
+
+        function drawSnake() {
+            const head = snake[0];
+            snake.forEach((segment, index) => {
+                let rotation = 0;
+                if (index === 0) {
+                    let headTexture = snake.length === 1 ? snakeHeadOneTexture : snakeHeadTexture;
+                    switch (direction) {
+                        case 'up':
+                            rotation = -Math.PI / 2;
+                            break;
+                        case 'down':
+                            rotation = Math.PI / 2;
+                            break;
+                        case 'left':
+                            rotation = Math.PI;
+                            break;
+                        case 'right':
+                            rotation = 0;
+                            break;
+                    }
+                    drawBlock(segment.x, segment.y, headTexture, rotation, headOpacity);
+                } else if (index === snake.length - 1) {
+                    const prevSegment = snake[index - 1];
+                    if (prevSegment.x < segment.x) rotation = Math.PI;
+                    if (prevSegment.x > segment.x) rotation = 0;
+                    if (prevSegment.y < segment.y) rotation = -Math.PI / 2;
+                    if (prevSegment.y > segment.y) rotation = Math.PI / 2;
+                    drawBlock(segment.x, segment.y, snakeFooterTexture, rotation);
+                } else {
+                    const prevSegment = snake[index - 1];
+                    const nextSegment = snake[index + 1] || head;
+                    let texture = snakeBodyTexture;
+                    if (snake.length >= 3 && prevSegment.x !== nextSegment.x && prevSegment.y !== nextSegment.y) {
+                      // 后来发现，和当前行进的用户方向无关
+                      // 抓住转折处的特征便可
+                      if(prevSegment.x > nextSegment.x && prevSegment.y > nextSegment.y && prevSegment.x == segment.x || prevSegment.y == segment.y && prevSegment.x < nextSegment.x && prevSegment.y < nextSegment.y){
+                        texture = ltNewTexture;
+                      } else if(prevSegment.x < nextSegment.x && prevSegment.y > nextSegment.y && prevSegment.x == segment.x || prevSegment.y == segment.y && prevSegment.x > nextSegment.x && prevSegment.y < nextSegment.y){
+                        texture = rtNewTexture;
+                      } else if((prevSegment.x < nextSegment.x && prevSegment.y < nextSegment.y && prevSegment.x == segment.x) || (prevSegment.y == segment.y && prevSegment.x > nextSegment.x && prevSegment.y > nextSegment.y)){
+                        texture = tlNewTexture;
+                      } else if(prevSegment.x > nextSegment.x && prevSegment.y < nextSegment.y && prevSegment.x == segment.x || prevSegment.y == segment.y && prevSegment.x < nextSegment.x && prevSegment.y > nextSegment.y){
+                        texture = trNewTexture;
+                      }
+                      rotation = 0;
+                    } else {
+                        if (prevSegment.x !== nextSegment.x) rotation = 0;
+                        if (prevSegment.y !== nextSegment.y) rotation = Math.PI / 2;
+                    }
+                    drawBlock(segment.x, segment.y, texture, rotation);
+                }
+            });
+        }
+
+        function drawFood() {
+            drawBlock(food.x, food.y, foodTexture, 0, foodOpacity, foodScale, foodShakeOffset);
+        }
+
+        function moveSnake() {
+            direction = nextDirection;
+            const head = { ...snake[0] };
+            switch (direction) {
+                case 'up':
+                    head.y -= blockSize;
+                    break;
+                case 'down':
+                    head.y += blockSize;
+                    break;
+                case 'left':
+                    head.x -= blockSize;
+                    break;
+                case 'right':
+                    head.x += blockSize;
+                    break;
+            }
+
+            if (head.x < 0 || head.x >= canvas.width || head.y < 0 || head.y >= canvas.height) {
+              console.log('游戏结束');
+                return;
+            }
+
+            if (head.x === food.x && head.y === food.y) {
+                snake.unshift(food);
+                food = generateFood();
+            } else {
+                snake.pop();
+                snake.unshift(head);
+            }
+
+            if (snake.slice(1).some(segment => segment.x === head.x && segment.y === head.y)) {
+                alert('游戏结束');
+                return;
+            }
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawGrid();
+            drawSnake();
+            drawFood();
+        }
+
+        function changeDirection(event) {
+            switch (event.key) {
+                case 'ArrowUp':
+                    if (direction !== 'down') nextDirection = 'up';
+                    break;
+                case 'ArrowDown':
+                    if (direction !== 'up') nextDirection = 'down';
+                    break;
+                case 'ArrowLeft':
+                    if (direction !== 'right') nextDirection = 'left';
+                    break;
+                case 'ArrowRight':
+                    if (direction !== 'left') nextDirection = 'right';
+                    break;
+            }
+        }
+
+        function updateHeadOpacity() {
+            headOpacity = headOpacity === 1 ? 0.7 : 1;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawGrid();
+            drawSnake();
+            drawFood();
+        }
+
+        document.addEventListener('keydown', changeDirection);
+
+        intervalMoveSnake = setInterval(moveSnake, 500);
+        intervalOpacity =  setInterval(updateHeadOpacity, 100);
+    </script>
+</body>
+</html>
